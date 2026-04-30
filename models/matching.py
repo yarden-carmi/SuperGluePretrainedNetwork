@@ -69,16 +69,32 @@ class Matching(torch.nn.Module):
             pred1 = self.superpoint({'image': data['image1']})
             pred = {**pred, **{k+'1': v for k, v in pred1.items()}}
 
-        # Batch all features
-        # We should either have i) one image per batch, or
-        # ii) the same number of local features for all images in the batch.
-        data = {**data, **pred}
+        # SuperPoint returns per-image lists (variable keypoint counts).
+        # We invoke SuperGlue once per pair at B=1 and collate outputs as lists.
+        image0, image1 = data['image0'], data['image1']
+        B = image0.shape[0]
 
-        for k in data:
-            if isinstance(data[k], (list, tuple)):
-                data[k] = torch.stack(data[k])
+        matches0_list, matches1_list = [], []
+        mscores0_list, mscores1_list = [], []
+        for i in range(B):
+            sub = {
+                'image0':       image0[i:i+1],
+                'image1':       image1[i:i+1],
+                'keypoints0':   pred['keypoints0'][i].unsqueeze(0),
+                'keypoints1':   pred['keypoints1'][i].unsqueeze(0),
+                'scores0':      pred['scores0'][i].unsqueeze(0),
+                'scores1':      pred['scores1'][i].unsqueeze(0),
+                'descriptors0': pred['descriptors0'][i].unsqueeze(0),
+                'descriptors1': pred['descriptors1'][i].unsqueeze(0),
+            }
+            sg = self.superglue(sub)
+            matches0_list.append(sg['matches0'][0])
+            matches1_list.append(sg['matches1'][0])
+            mscores0_list.append(sg['matching_scores0'][0])
+            mscores1_list.append(sg['matching_scores1'][0])
 
-        # Perform the matching
-        pred = {**pred, **self.superglue(data)}
-
+        pred['matches0']         = matches0_list
+        pred['matches1']         = matches1_list
+        pred['matching_scores0'] = mscores0_list
+        pred['matching_scores1'] = mscores1_list
         return pred
