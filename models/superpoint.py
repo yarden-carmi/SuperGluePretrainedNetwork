@@ -99,6 +99,7 @@ def sample_descriptors(keypoints, descriptors, s: int = 8):
     return descriptors
 
 
+@observer
 class SuperPoint(nn.Module):
     """SuperPoint Convolutional Detector and Descriptor
 

@@ -75,6 +75,7 @@ def normalize_keypoints(kpts, image_shape):
     return (kpts - center[:, None, :]) / scaling[:, None, :]
 
 
+@observer
 class KeypointEncoder(nn.Module):
     """ Joint encoding of visual appearance and location using MLPs"""
     def __init__(self, feature_dim: int, layers: List[int]) -> None:
@@ -95,6 +96,7 @@ def attention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> Tu
     return torch.einsum('bhnm,bdhm->bdhn', prob, value), prob
 
 
+@observer
 class MultiHeadedAttention(nn.Module):
     """ Multi-head attention to increase model expressivitiy """
     def __init__(self, num_heads: int, d_model: int):
@@ -113,6 +115,7 @@ class MultiHeadedAttention(nn.Module):
         return self.merge(x.contiguous().view(batch_dim, self.dim*self.num_heads, -1))
 
 
+@observer
 class AttentionalPropagation(nn.Module):
     def __init__(self, feature_dim: int, num_heads: int):
         super().__init__()
@@ -125,6 +128,7 @@ class AttentionalPropagation(nn.Module):
         return self.mlp(torch.cat([x, message], dim=1))
 
 
+@observer
 class AttentionalGNN(nn.Module):
     def __init__(self, feature_dim: int, layer_names: List[str]) -> None:
         super().__init__()
@@ -157,6 +161,8 @@ def log_sinkhorn_iterations(Z: torch.Tensor, log_mu: torch.Tensor, log_nu: torch
 @observer
 def log_optimal_transport(scores: torch.Tensor, alpha: torch.Tensor, iters: int) -> torch.Tensor:
     """ Perform Differentiable Optimal Transport in Log-space for stability"""
+    print(f"[ObservedSinkhorn regular] log_optimal_transport: scores={tuple(scores.shape)} "
+        f"alpha={alpha.detach().cpu().flatten()[0].item():.4f} iters={iters}")
     b, m, n = scores.shape
     one = scores.new_tensor(1)
     ms, ns = (m*one).to(scores), (n*one).to(scores)
@@ -182,6 +188,7 @@ def arange_like(x, dim: int):
     return x.new_ones(x.shape[dim]).cumsum(0) - 1  # traceable in 1.1
 
 
+@observer
 class SuperGlue(nn.Module):
     """SuperGlue feature matching middle-end
 
