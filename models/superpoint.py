@@ -99,6 +99,45 @@ def sample_descriptors(keypoints, descriptors, s: int = 8):
     return descriptors
 
 
+# Variable-length per-image operations. FX symbolic tracing cannot iterate
+# tensors as Python sequences, so each list-comp/per-image block here is wrapped
+# as a single @observer leaf — one FX call_function node per block.
+
+@observer
+def _sp_extract_keypoints(scores, threshold: float):
+    return [torch.nonzero(s > threshold) for s in scores]
+
+
+@observer
+def _sp_score_at_keypoints(scores, keypoints):
+    return [s[tuple(k.t())] for s, k in zip(scores, keypoints)]
+
+
+@observer
+def _sp_remove_borders_list(keypoints, scores, border: int, height: int, width: int):
+    return list(zip(*[
+        remove_borders(k, s, border, height, width)
+        for k, s in zip(keypoints, scores)]))
+
+
+@observer
+def _sp_top_k_list(keypoints, scores, k: int):
+    return list(zip(*[
+        top_k_keypoints(kp, sc, k)
+        for kp, sc in zip(keypoints, scores)]))
+
+
+@observer
+def _sp_flip_kpts(keypoints):
+    return [torch.flip(k, [1]).float() for k in keypoints]
+
+
+@observer
+def _sp_sample_desc_list(keypoints, descriptors, s: int = 8):
+    return [sample_descriptors(k[None], d[None], s)[0]
+            for k, d in zip(keypoints, descriptors)]
+
+
 @observer
 class SuperPoint(nn.Module):
     """SuperPoint Convolutional Detector and Descriptor
@@ -174,34 +213,23 @@ class SuperPoint(nn.Module):
         scores = scores.permute(0, 1, 3, 2, 4).reshape(b, h*8, w*8)
         scores = simple_nms(scores, self.config['nms_radius'])
 
-        # Extract keypoints
-        keypoints = [
-            torch.nonzero(s > self.config['keypoint_threshold'])
-            for s in scores]
-        scores = [s[tuple(k.t())] for s, k in zip(scores, keypoints)]
+        keypoints = _sp_extract_keypoints(scores, self.config['keypoint_threshold'])
+        scores = _sp_score_at_keypoints(scores, keypoints)
 
-        # Discard keypoints near the image borders
-        keypoints, scores = list(zip(*[
-            remove_borders(k, s, self.config['remove_borders'], h*8, w*8)
-            for k, s in zip(keypoints, scores)]))
+        keypoints, scores = _sp_remove_borders_list(
+            keypoints, scores, self.config['remove_borders'], h*8, w*8)
 
-        # Keep the k keypoints with highest score
         if self.config['max_keypoints'] >= 0:
-            keypoints, scores = list(zip(*[
-                top_k_keypoints(k, s, self.config['max_keypoints'])
-                for k, s in zip(keypoints, scores)]))
+            keypoints, scores = _sp_top_k_list(
+                keypoints, scores, self.config['max_keypoints'])
 
-        # Convert (h, w) to (x, y)
-        keypoints = [torch.flip(k, [1]).float() for k in keypoints]
+        keypoints = _sp_flip_kpts(keypoints)
 
-        # Compute the dense descriptors
         cDa = self.relu(self.convDa(x))
         descriptors = self.convDb(cDa)
         descriptors = torch.nn.functional.normalize(descriptors, p=2, dim=1)
 
-        # Extract descriptors
-        descriptors = [sample_descriptors(k[None], d[None], 8)[0]
-                       for k, d in zip(keypoints, descriptors)]
+        descriptors = _sp_sample_desc_list(keypoints, descriptors, 8)
 
         return {
             'keypoints': keypoints,
