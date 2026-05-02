@@ -161,7 +161,6 @@ def log_sinkhorn_iterations(Z: torch.Tensor, log_mu: torch.Tensor, log_nu: torch
 @observer
 def log_optimal_transport(scores: torch.Tensor, alpha: torch.Tensor, iters: int) -> torch.Tensor:
     """ Perform Differentiable Optimal Transport in Log-space for stability"""
-    print(f"[ObservedSinkhorn regular] log_optimal_transport: scores={tuple(scores.shape)} "
         f"alpha={alpha.detach().cpu().flatten()[0].item():.4f} iters={iters}")
     b, m, n = scores.shape
     one = scores.new_tensor(1)
