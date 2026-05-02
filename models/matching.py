@@ -61,11 +61,23 @@ class Matching(torch.nn.Module):
         """
         pred = {}
 
-        # Extract SuperPoint (keypoints, scores, descriptors) if not provided
-        if 'keypoints0' not in data:
+        # Extract SuperPoint (keypoints, scores, descriptors) if not provided.
+        # Stack image0 and image1 into one batch so SuperPoint runs once per
+        # pair instead of twice — keeps the call_log clean (no duplicated SP
+        # forward sequence) without changing math.
+        need_sp0 = 'keypoints0' not in data
+        need_sp1 = 'keypoints1' not in data
+        if need_sp0 and need_sp1:
+            stacked = torch.cat([data['image0'], data['image1']], dim=0)
+            all_pred = self.superpoint({'image': stacked})
+            B = data['image0'].shape[0]
+            for k, v in all_pred.items():
+                pred[k+'0'] = v[:B]
+                pred[k+'1'] = v[B:]
+        elif need_sp0:
             pred0 = self.superpoint({'image': data['image0']})
             pred = {**pred, **{k+'0': v for k, v in pred0.items()}}
-        if 'keypoints1' not in data:
+        elif need_sp1:
             pred1 = self.superpoint({'image': data['image1']})
             pred = {**pred, **{k+'1': v for k, v in pred1.items()}}
 

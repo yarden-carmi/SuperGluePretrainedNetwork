@@ -49,7 +49,7 @@ from torch import nn
 
 from runspace.src.registry.observer import observer
 
-
+@observer
 def MLP(channels: List[int], do_bn: bool = True) -> nn.Module:
     """ Multi-layer perceptron """
     n = len(channels)
